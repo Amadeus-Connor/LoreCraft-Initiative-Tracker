@@ -80,6 +80,16 @@
   .setup-card{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:14px;margin:0 16px 12px}
   .setup-title{font-family:'Courier New',monospace;font-size:10px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:10px}
   .player-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+
+  /* BUDDY SYSTEM */
+  .player-block{margin-bottom:12px;padding-bottom:4px;border-bottom:1px solid rgba(42,42,42,0.5)}
+  .player-block .player-row{margin-bottom:4px}
+  .buddy-row{display:flex;gap:6px;align-items:center;padding-left:4px}
+  .buddy-icon{font-size:12px;opacity:0.4;filter:grayscale(1)}
+  .buddy-row.paired .buddy-icon{opacity:1;filter:none}
+  .buddy-select{flex:1;min-width:120px;font-size:12px;padding:5px 8px;color:var(--muted)}
+  .buddy-row.paired .buddy-select{color:var(--gold);border-color:rgba(201,168,76,0.4)}
+  .buddy-chain{text-align:center;font-size:15px;line-height:1;margin:-7px 0;position:relative;z-index:2;filter:drop-shadow(0 0 4px rgba(201,168,76,0.7))}
   .enemy-toggle{background:var(--card2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;cursor:pointer;margin-bottom:4px}
   .enemy-toggle.selected{border-color:var(--orange);background:rgba(230,126,34,0.08)}
   .enemy-toggle-top{display:flex;align-items:center;gap:8px}
@@ -499,18 +509,45 @@ function listenForUpdates(){
 function init(){renderEnemyGrid();addPlayer();addPlayer();}
 
 // ═══ PLAYERS ═══
-function addPlayer(hp,ac){players.push({id:'p'+(++playerIdCounter),name:'',hp:hp||30,maxHp:hp||30,ac:ac||15,init:0});renderPlayerList();saveLocal();}
-function removePlayer(id){players=players.filter(p=>p.id!==id);renderPlayerList();saveLocal();}
+function addPlayer(hp,ac){players.push({id:'p'+(++playerIdCounter),name:'',hp:hp||30,maxHp:hp||30,ac:ac||15,init:0,buddyId:null});renderPlayerList();saveLocal();}
+function removePlayer(id){const p=players.find(x=>x.id===id);if(p&&p.buddyId){const b=players.find(x=>x.id===p.buddyId);if(b)b.buddyId=null;}players=players.filter(p=>p.id!==id);renderPlayerList();saveLocal();}
 function updatePlayer(id,f,v){const p=players.find(x=>x.id===id);if(p){p[f]=v;if(f==='maxHp')p.hp=v;}saveLocal();}
 function renderPlayerList(){
-  document.getElementById('player-list').innerHTML=players.map(p=>`
-    <div class="player-row">
-      <input class="inp inp-name" type="text" placeholder="Name" value="${p.name}" onchange="updatePlayer('${p.id}','name',this.value)">
-      <input class="inp inp-num" type="number" placeholder="HP" value="${p.maxHp||''}" onchange="updatePlayer('${p.id}','maxHp',parseInt(this.value)||30)">
-      <input class="inp inp-num" type="number" placeholder="AC" value="${p.ac||''}" onchange="updatePlayer('${p.id}','ac',parseInt(this.value)||10)">
-      <input class="inp inp-num" type="number" placeholder="Init" value="${p.init||''}" onchange="updatePlayer('${p.id}','init',parseInt(this.value)||0)">
-      <button class="btn btn-red btn-sm" onclick="removePlayer('${p.id}')">×</button>
-    </div>`).join('');
+  const dispName=(pl,idx)=>`${idx+1} · ${pl.name||'Player '+(idx+1)}`;
+  document.getElementById('player-list').innerHTML=players.map((p,pi)=>{
+    const buddyRow = players.length>=2 ? `
+      <div class="buddy-row${p.buddyId?' paired':''}">
+        <span class="buddy-icon">🔗</span>
+        <select class="inp buddy-select" onchange="setBuddy('${p.id}',this.value)">
+          <option value="">— Solo —</option>
+          ${players.map((o,oi)=>o.id===p.id?'':`<option value="${o.id}"${p.buddyId===o.id?' selected':''}>${dispName(o,oi)}</option>`).join('')}
+        </select>
+      </div>` : '';
+    return `<div class="player-block">
+      <div class="player-row">
+        <input class="inp inp-name" type="text" placeholder="Name" value="${p.name}" onchange="updatePlayer('${p.id}','name',this.value)">
+        <input class="inp inp-num" type="number" placeholder="HP" value="${p.maxHp||''}" onchange="updatePlayer('${p.id}','maxHp',parseInt(this.value)||30)">
+        <input class="inp inp-num" type="number" placeholder="AC" value="${p.ac||''}" onchange="updatePlayer('${p.id}','ac',parseInt(this.value)||10)">
+        <input class="inp inp-num" type="number" placeholder="Init" value="${p.init||''}" onchange="updatePlayer('${p.id}','init',parseInt(this.value)||0)">
+        <button class="btn btn-red btn-sm" onclick="removePlayer('${p.id}')">×</button>
+      </div>
+      ${buddyRow}
+    </div>`;
+  }).join('');
+}
+function setBuddy(id,buddyId){
+  const p=players.find(x=>x.id===id);if(!p)return;
+  // unlink p's existing buddy
+  if(p.buddyId){const old=players.find(x=>x.id===p.buddyId);if(old)old.buddyId=null;}
+  if(buddyId){
+    const b=players.find(x=>x.id===buddyId);
+    if(b){
+      // unlink b's existing buddy if different
+      if(b.buddyId&&b.buddyId!==id){const bold=players.find(x=>x.id===b.buddyId);if(bold)bold.buddyId=null;}
+      p.buddyId=buddyId;b.buddyId=id;
+    }
+  }else{p.buddyId=null;}
+  renderPlayerList();saveLocal();
 }
 
 // ═══ CUSTOM ENEMIES (SETUP) ═══
@@ -565,7 +602,29 @@ function startCombat(){
   if(!validPlayers.length){alert('Add at least one player with name, HP, AC, and initiative.');return;}
   const topPlayerRoll=Math.max(...validPlayers.map(p=>p.init));
   const playerSideWins=topPlayerRoll>=enemyRoll;
-  const pUnits=validPlayers.sort((a,b)=>b.init-a.init).map(p=>({id:p.id,name:p.name,side:'player',hp:p.maxHp,maxHp:p.maxHp,ac:p.ac,init:p.init,defeated:false,rxn:true}));
+  // Build player SLOTS (a buddied pair is one slot of two adjacent units sharing the higher roll)
+  const usedIds=new Set();
+  const pSlots=[];
+  validPlayers.forEach(p=>{
+    if(usedIds.has(p.id))return;
+    // buddy must also be valid and mutually linked
+    const buddy=p.buddyId?validPlayers.find(x=>x.id===p.buddyId&&x.buddyId===p.id):null;
+    if(buddy&&!usedIds.has(buddy.id)){
+      const sharedInit=Math.max(p.init,buddy.init);
+      const pairId='pair-'+p.id+'-'+buddy.id;
+      usedIds.add(p.id);usedIds.add(buddy.id);
+      pSlots.push({init:sharedInit,units:[
+        {id:p.id,name:p.name,side:'player',hp:p.maxHp,maxHp:p.maxHp,ac:p.ac,init:sharedInit,ownRoll:p.init,defeated:false,rxn:true,pairId},
+        {id:buddy.id,name:buddy.name,side:'player',hp:buddy.maxHp,maxHp:buddy.maxHp,ac:buddy.ac,init:sharedInit,ownRoll:buddy.init,defeated:false,rxn:true,pairId}
+      ]});
+    }else{
+      usedIds.add(p.id);
+      pSlots.push({init:p.init,units:[
+        {id:p.id,name:p.name,side:'player',hp:p.maxHp,maxHp:p.maxHp,ac:p.ac,init:p.init,defeated:false,rxn:true,pairId:null}
+      ]});
+    }
+  });
+  pSlots.sort((a,b)=>b.init-a.init);
   const eUnits=[];
   Object.entries(activeEnemies).forEach(([uid,cfg])=>{
     const t=UNITS.find(u=>u.id===uid);if(!t)return;
@@ -580,15 +639,17 @@ function startCombat(){
   customEnemies.filter(e=>e.name&&e.hp>0).forEach(e=>{
     eUnits.push({id:e.id,name:e.name,side:'enemy',hp:e.hp,maxHp:e.hp,ac:e.ac,init:enemyRoll,defeated:false,typeColor:'#E67E22'});
   });
-  // FIX: interleave based on who won initiative, not array length
-  const first=playerSideWins?pUnits:eUnits;
-  const second=playerSideWins?eUnits:pUnits;
+  // Each enemy is its own slot of one
+  const eSlots=eUnits.map(u=>({init:u.init,units:[u]}));
+  // Interleave at the SLOT level so buddy pairs never get split by an enemy
+  const first=playerSideWins?pSlots:eSlots;
+  const second=playerSideWins?eSlots:pSlots;
   combatUnits=[];
   const long=first.length>=second.length?first:second;
   const short=first.length<second.length?first:second;
-  // Ensure winning side goes first
-  if(long===first){for(let i=0;i<long.length;i++){combatUnits.push(long[i]);if(i<short.length)combatUnits.push(short[i]);}}
-  else{for(let i=0;i<long.length;i++){if(i<short.length)combatUnits.push(short[i]);combatUnits.push(long[i]);}}
+  const pushSlot=slot=>slot.units.forEach(u=>combatUnits.push(u));
+  if(long===first){for(let i=0;i<long.length;i++){pushSlot(long[i]);if(i<short.length)pushSlot(short[i]);}}
+  else{for(let i=0;i<long.length;i++){if(i<short.length)pushSlot(short[i]);pushSlot(long[i]);}}
   round=1;currentIndex=0;turnCounter=0;maxTurnReached=0;
   document.getElementById('gm-setup').style.display='none';
   document.getElementById('gm-tracker').style.display='block';
@@ -608,31 +669,45 @@ function applyDoT(){
     else if(u.poisoned){u.hp=Math.max(1,u.hp-1);}
   });
 }
+// Returns the indices of all units sharing a slot with index i (buddied pair = 2 adjacent, solo = 1)
+function slotIndicesAt(i){
+  const u=combatUnits[i];if(!u)return[];
+  if(!u.pairId)return[i];
+  const out=[];combatUnits.forEach((x,j)=>{if(x.pairId===u.pairId)out.push(j);});
+  return out;
+}
 function nextTurn(){
   if(!combatUnits.length)return;
-  let next=(getActiveIndex()+1)%combatUnits.length;let loops=0;
+  const cur=getActiveIndex();if(cur<0)return;
+  const curSlot=slotIndicesAt(cur);
+  const slotMax=Math.max(...curSlot);
+  let next=(slotMax+1)%combatUnits.length;let loops=0;
   while(combatUnits[next].defeated&&loops<combatUnits.length){next=(next+1)%combatUnits.length;loops++;}
-  if(next<=getActiveIndex())round++;
+  if(next<=cur)round++;
   currentIndex=next;
   turnCounter++;
   // Apply DoT only when crossing a new high-water mark (not on rewinds)
   if(turnCounter>maxTurnReached){applyDoT();maxTurnReached=turnCounter;}
-  // Auto-reset reaction for the active player
-  const active=combatUnits[next];
-  if(active&&active.side==='player')active.rxn=true;
+  // Auto-reset reaction for every player in the new active slot
+  slotIndicesAt(getActiveIndex()).forEach(j=>{if(combatUnits[j].side==='player')combatUnits[j].rxn=true;});
   renderGMTracker();pushState();
   const el=document.getElementById('gm-unit-'+next);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function prevTurn(){
   if(!combatUnits.length||turnCounter<=0)return;
-  let prev=(getActiveIndex()-1+combatUnits.length)%combatUnits.length;let loops=0;
+  const cur=getActiveIndex();if(cur<0)return;
+  const curSlot=slotIndicesAt(cur);
+  const slotMin=Math.min(...curSlot);
+  let prev=(slotMin-1+combatUnits.length)%combatUnits.length;let loops=0;
   while(combatUnits[prev].defeated&&loops<combatUnits.length){prev=(prev-1+combatUnits.length)%combatUnits.length;loops++;}
-  if(prev>=getActiveIndex())round=Math.max(1,round-1);
-  currentIndex=prev;
+  if(prev>=cur)round=Math.max(1,round-1);
+  // Anchor to the lowest index of the slot we landed on
+  const prevSlot=slotIndicesAt(prev);
+  currentIndex=Math.min(...prevSlot);
   turnCounter--;
   // No DoT, no reaction reset on rewind
   renderGMTracker();pushState();
-  const el=document.getElementById('gm-unit-'+prev);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
+  const el=document.getElementById('gm-unit-'+currentIndex);if(el)el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 
@@ -778,7 +853,8 @@ function costTag(cost){
 // ═══ RENDER SLOT ═══
 function renderSlot(u,i,gmMode){
   const pct=Math.max(0,u.hp/(u.maxHp||1));
-  const isA=i===getActiveIndex()&&!u.defeated;
+  const ai=getActiveIndex();
+  const isA=!u.defeated&&(i===ai||(u.pairId&&combatUnits[ai]&&combatUnits[ai].pairId===u.pairId));
   const isP=u.side==='player';
   const cls=['slot',isP?'player-slot':'enemy-slot',isA?'active-turn':'',(u.poisoned||u.burning)?'compromised':'',u.defeated?'defeated':''].filter(Boolean).join(' ');
   const ct=((1-pct)*100).toFixed(1);
@@ -811,7 +887,7 @@ function renderSlot(u,i,gmMode){
       <div class="orb-hp"><span class="orb-hp-c">${u.defeated?'☠':u.hp}</span>${!u.defeated?`<span class="orb-hp-m">/ ${u.maxHp}</span>`:''}</div>
     </div></div>
     <div class="slot-border-right" style="background-image:url('${ASSETS.sandstone}')"></div>
-  </div>${inlineHtml}</div>`;
+  </div>${inlineHtml}</div>${(u.pairId&&combatUnits[i+1]&&combatUnits[i+1].pairId===u.pairId)?`<div class="buddy-chain" aria-hidden="true">🔗</div>`:''}`;
 }
 
 // ═══ DOT SIDE PANELS ═══
