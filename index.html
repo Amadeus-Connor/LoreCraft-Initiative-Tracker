@@ -82,14 +82,24 @@
   .player-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
 
   /* BUDDY SYSTEM */
-  .player-block{margin-bottom:12px;padding-bottom:4px;border-bottom:1px solid rgba(42,42,42,0.5)}
-  .player-block .player-row{margin-bottom:4px}
-  .buddy-row{display:flex;gap:6px;align-items:center;padding-left:4px}
-  .buddy-icon{font-size:12px;opacity:0.4;filter:grayscale(1)}
-  .buddy-row.paired .buddy-icon{opacity:1;filter:none}
+  .player-block{margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid rgba(42,42,42,0.5)}
+  .player-block .player-row{margin-bottom:0}
+  .btn-chain{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--card2);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;padding:0;flex:0 0 auto}
+  .btn-chain svg{display:block}
+  .btn-chain:active{border-color:var(--gold)}
+  .btn-chain.paired{color:var(--gold);border-color:rgba(201,168,76,0.5);background:rgba(201,168,76,0.1)}
+  .buddy-row{display:flex;gap:8px;align-items:center;padding:6px 4px 2px 6px;margin-top:4px}
+  .buddy-row-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  .buddy-row.paired .buddy-row-label{color:var(--gold)}
   .buddy-select{flex:1;min-width:120px;font-size:12px;padding:5px 8px;color:var(--muted)}
   .buddy-row.paired .buddy-select{color:var(--gold);border-color:rgba(201,168,76,0.4)}
-  .buddy-chain{text-align:center;font-size:15px;line-height:1;margin:-7px 0;position:relative;z-index:2;filter:drop-shadow(0 0 4px rgba(201,168,76,0.7))}
+
+  /* BUDDY BRACKET (combat) */
+  .buddy-group{display:flex;align-items:stretch;gap:4px}
+  .buddy-group-slots{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+  .buddy-bracket{position:relative;flex:0 0 20px;width:20px}
+  .bb-line{position:absolute;top:14px;bottom:14px;left:7px;right:5px;border:2px solid var(--gold-dim);border-right:none;border-radius:4px 0 0 4px;opacity:0.9}
+  .bb-icon{position:absolute;left:0;top:50%;transform:translateY(-50%);color:var(--gold);background:var(--bg);padding:3px 1px;line-height:0;filter:drop-shadow(0 0 3px rgba(201,168,76,0.5))}
   .enemy-toggle{background:var(--card2);border:1px solid var(--border);border-radius:4px;padding:8px 10px;cursor:pointer;margin-bottom:4px}
   .enemy-toggle.selected{border-color:var(--orange);background:rgba(230,126,34,0.08)}
   .enemy-toggle-top{display:flex;align-items:center;gap:8px}
@@ -376,6 +386,8 @@ const UNITS=[
 const SQUAD_LABELS=['A','B','C','D','E','F'];
 let players=[],activeEnemies={},reinforceEnemies={},combatUnits=[],currentIndex=0,round=1,modalTarget=null,playerIdCounter=0,mode='',roomCode='';
 let customEnemies=[],customReinforcements=[],customIdCounter=0;
+let expandedBuddy=new Set();
+const LINK_ICON='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 let turnCounter=0,maxTurnReached=0;
 
 // ═══ LOCAL PERSISTENCE ═══
@@ -514,26 +526,35 @@ function removePlayer(id){const p=players.find(x=>x.id===id);if(p&&p.buddyId){co
 function updatePlayer(id,f,v){const p=players.find(x=>x.id===id);if(p){p[f]=v;if(f==='maxHp')p.hp=v;}saveLocal();}
 function renderPlayerList(){
   const dispName=(pl,idx)=>`${idx+1} · ${pl.name||'Player '+(idx+1)}`;
+  const canPair=players.length>=2;
   document.getElementById('player-list').innerHTML=players.map((p,pi)=>{
-    const buddyRow = players.length>=2 ? `
+    const showSelect=canPair&&(expandedBuddy.has(p.id)||!!p.buddyId);
+    const chainBtn=canPair?`<button class="btn-chain${p.buddyId?' paired':''}" title="Buddy up" onclick="toggleBuddyExpand('${p.id}')">${LINK_ICON}</button>`:'';
+    const buddyRow=showSelect?`
       <div class="buddy-row${p.buddyId?' paired':''}">
-        <span class="buddy-icon">🔗</span>
+        <span class="buddy-row-label">Shares turn with</span>
         <select class="inp buddy-select" onchange="setBuddy('${p.id}',this.value)">
           <option value="">— Solo —</option>
           ${players.map((o,oi)=>o.id===p.id?'':`<option value="${o.id}"${p.buddyId===o.id?' selected':''}>${dispName(o,oi)}</option>`).join('')}
         </select>
-      </div>` : '';
+      </div>`:'';
     return `<div class="player-block">
       <div class="player-row">
         <input class="inp inp-name" type="text" placeholder="Name" value="${p.name}" onchange="updatePlayer('${p.id}','name',this.value)">
         <input class="inp inp-num" type="number" placeholder="HP" value="${p.maxHp||''}" onchange="updatePlayer('${p.id}','maxHp',parseInt(this.value)||30)">
         <input class="inp inp-num" type="number" placeholder="AC" value="${p.ac||''}" onchange="updatePlayer('${p.id}','ac',parseInt(this.value)||10)">
         <input class="inp inp-num" type="number" placeholder="Init" value="${p.init||''}" onchange="updatePlayer('${p.id}','init',parseInt(this.value)||0)">
+        ${chainBtn}
         <button class="btn btn-red btn-sm" onclick="removePlayer('${p.id}')">×</button>
       </div>
       ${buddyRow}
     </div>`;
   }).join('');
+}
+function toggleBuddyExpand(id){
+  if(expandedBuddy.has(id))expandedBuddy.delete(id);
+  else expandedBuddy.add(id);
+  renderPlayerList();
 }
 function setBuddy(id,buddyId){
   const p=players.find(x=>x.id===id);if(!p)return;
@@ -546,7 +567,7 @@ function setBuddy(id,buddyId){
       if(b.buddyId&&b.buddyId!==id){const bold=players.find(x=>x.id===b.buddyId);if(bold)bold.buddyId=null;}
       p.buddyId=buddyId;b.buddyId=id;
     }
-  }else{p.buddyId=null;}
+  }else{p.buddyId=null;expandedBuddy.delete(id);}
   renderPlayerList();saveLocal();
 }
 
@@ -887,7 +908,7 @@ function renderSlot(u,i,gmMode){
       <div class="orb-hp"><span class="orb-hp-c">${u.defeated?'☠':u.hp}</span>${!u.defeated?`<span class="orb-hp-m">/ ${u.maxHp}</span>`:''}</div>
     </div></div>
     <div class="slot-border-right" style="background-image:url('${ASSETS.sandstone}')"></div>
-  </div>${inlineHtml}</div>${(u.pairId&&combatUnits[i+1]&&combatUnits[i+1].pairId===u.pairId)?`<div class="buddy-chain" aria-hidden="true">🔗</div>`:''}`;
+  </div>${inlineHtml}</div>`;
 }
 
 // ═══ DOT SIDE PANELS ═══
@@ -917,17 +938,37 @@ function renderDotPanels(prefix){
   rightEl.classList.toggle('has-units',rParts.length>0);
 }
 
+// ═══ INIT LIST (with buddy bracket grouping) ═══
+function renderInitList(gmMode){
+  let html='';
+  for(let i=0;i<combatUnits.length;i++){
+    const u=combatUnits[i];
+    const pairFirst=u.pairId&&combatUnits[i+1]&&combatUnits[i+1].pairId===u.pairId;
+    const pairSecond=u.pairId&&combatUnits[i-1]&&combatUnits[i-1].pairId===u.pairId;
+    if(pairFirst){
+      html+=`<div class="buddy-group"><div class="buddy-bracket" aria-hidden="true"><div class="bb-line"></div><div class="bb-icon">${LINK_ICON}</div></div><div class="buddy-group-slots">`;
+      html+=renderSlot(u,i,gmMode);
+    }else if(pairSecond){
+      html+=renderSlot(u,i,gmMode);
+      html+=`</div></div>`;
+    }else{
+      html+=renderSlot(u,i,gmMode);
+    }
+  }
+  return html;
+}
+
 // ═══ GM RENDER ═══
 function renderGMTracker(){
   document.getElementById('gm-round').textContent='Round '+round;
-  document.getElementById('gm-init-list').innerHTML=combatUnits.map((u,i)=>renderSlot(u,i,true)).join('');
+  document.getElementById('gm-init-list').innerHTML=renderInitList(true);
   renderDotPanels('gm');
 }
 
 // ═══ PLAYER STAGE RENDER ═══
 function renderPlayerStage(){
   document.getElementById('ps-round').textContent='Round '+round;
-  document.getElementById('ps-init-list').innerHTML=combatUnits.map((u,i)=>renderSlot(u,i,false)).join('');
+  document.getElementById('ps-init-list').innerHTML=renderInitList(false);
   renderDotPanels('ps');
   const ai=getActiveIndex();
   if(ai>=0){const el=document.getElementById('ps-unit-'+ai);if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}
