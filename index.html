@@ -165,6 +165,12 @@
   .st-ac .st-v{color:#4DB8E0}.st-init .st-v{color:#D4A942}
   .sq-ct{font-family:'Courier New',monospace;font-size:11px;color:var(--orange);margin-left:4px}
 
+  /* BOSS (shared HP · multi-turn) */
+  .boss-ct{font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:var(--gold);margin-left:6px;white-space:nowrap;flex-shrink:0}
+  .slot.boss-slot .slot-border-left{box-shadow:inset 3px 0 0 rgba(192,57,43,0.85)}
+  .slot.boss-slot .u-name{color:#F0938A}
+  .boss-pattern{font-family:'Courier New',monospace;font-size:13px;color:var(--gold);letter-spacing:1px;line-height:1.3;word-break:break-all;max-width:180px}
+
   /* HEALTH ORB */
   .orb-zone{width:100px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--slot-bg)}
   .orb-asm{width:86px;height:86px;position:relative}
@@ -233,6 +239,11 @@
       <div class="setup-card">
         <div class="setup-title">Enemies</div>
         <div style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">
+          <div style="font-size:11px;color:var(--gold);margin-bottom:6px;letter-spacing:1px">♛ Bosses <span style="color:var(--muted)">· shared HP · multiple turns</span></div>
+          <button class="btn btn-outline" onclick="addBoss()" style="margin-bottom:6px;color:var(--gold);border-color:rgba(201,168,76,0.5)">+ Add Boss</button>
+          <div id="boss-list"></div>
+        </div>
+        <div style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">
           <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px">Custom Enemies</div>
           <button class="btn btn-outline" onclick="addCustomEnemy()" style="margin-bottom:6px">+ Add Custom Enemy</button>
           <div id="custom-enemy-list"></div>
@@ -260,6 +271,11 @@
       <div id="reinforce-panel" style="display:none;padding:8px 16px">
         <div class="setup-card" style="margin:0">
           <div class="setup-title" style="color:var(--orange)">Deploy Reinforcements</div>
+          <div style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">
+            <div style="font-size:11px;color:var(--gold);margin-bottom:6px;letter-spacing:1px">♛ Boss Reinforcements <span style="color:var(--muted)">· shared HP · multiple turns</span></div>
+            <button class="btn btn-outline" onclick="addBossReinforce()" style="margin-bottom:6px;color:var(--gold);border-color:rgba(201,168,76,0.5)">+ Add Boss</button>
+            <div id="boss-reinforce-list"></div>
+          </div>
           <div style="margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:10px">
             <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px">Custom Reinforcements</div>
             <button class="btn btn-outline" onclick="addCustomReinforce()" style="margin-bottom:6px">+ Add Custom Enemy</button>
@@ -388,6 +404,7 @@ const UNITS=[
 const SQUAD_LABELS=['A','B','C','D','E','F'];
 let players=[],activeEnemies={},reinforceEnemies={},combatUnits=[],currentIndex=0,round=1,modalTarget=null,playerIdCounter=0,mode='',roomCode='';
 let customEnemies=[],customReinforcements=[],customIdCounter=0;
+let bosses=[],bossReinforcements=[],bossIdCounter=0;
 let expandedBuddy=new Set();
 const LINK_ICON='<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 let turnCounter=0,maxTurnReached=0;
@@ -414,6 +431,7 @@ function saveLocal(){
     localStorage.setItem(LS_KEY,JSON.stringify({
       mode,roomCode,inCombat,
       players,activeEnemies,customEnemies,
+      bosses,bossIdCounter,
       combatUnits,currentIndex,round,
       playerIdCounter,customIdCounter,
       turnCounter,maxTurnReached
@@ -439,6 +457,8 @@ async function doRestore(s){
   players=Array.isArray(s.players)?s.players:[];
   activeEnemies=(s.activeEnemies&&typeof s.activeEnemies==='object')?s.activeEnemies:{};
   customEnemies=Array.isArray(s.customEnemies)?s.customEnemies:[];
+  bosses=Array.isArray(s.bosses)?s.bosses:[];
+  bossIdCounter=s.bossIdCounter||0;
   combatUnits=Array.isArray(s.combatUnits)?s.combatUnits:[];
   currentIndex=s.currentIndex||0;
   round=s.round||1;
@@ -450,7 +470,7 @@ async function doRestore(s){
   if(firebaseReady){roomRef=db.ref('rooms/'+roomCode);}
   if(isGM){
     document.getElementById('gm-page').classList.add('active');
-    renderEnemyGrid();renderPlayerList();renderCustomEnemyList();
+    renderEnemyGrid();renderPlayerList();renderCustomEnemyList();renderBossList();
     if(s.inCombat&&combatUnits.length){
       document.getElementById('gm-setup').style.display='none';
       document.getElementById('gm-tracker').style.display='block';
@@ -520,7 +540,7 @@ function listenForUpdates(){
 }
 
 // ═══ INIT ═══
-function init(){renderEnemyGrid();addPlayer();addPlayer();}
+function init(){renderEnemyGrid();renderBossList();addPlayer();addPlayer();}
 
 // ═══ PLAYERS ═══
 function addPlayer(hp,ac){players.push({id:'p'+(++playerIdCounter),name:'',hp:hp||30,maxHp:hp||30,ac:ac||15,init:0,buddyId:null});renderPlayerList();saveLocal();}
@@ -601,6 +621,55 @@ function renderCustomEnemyList(){
     </div>`;
   }).join('');
 }
+
+// ═══ BOSSES (shared HP · multi-turn) ═══
+function addBoss(){bosses.push({id:'b'+(++bossIdCounter),name:'',hp:100,ac:16,turns:3,gap:3});renderBossList();saveLocal();}
+function removeBoss(id){bosses=bosses.filter(b=>b.id!==id);renderBossList();saveLocal();}
+function updateBoss(id,f,v){const b=bosses.find(x=>x.id===id);if(b)b[f]=v;saveLocal();}
+function adjBoss(id,f,d){const b=bosses.find(x=>x.id===id);if(!b)return;b[f]=Math.max(1,Math.min(12,(parseInt(b[f])||1)+d));renderBossList();saveLocal();}
+function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
+function mkBossToken(b,init,k,total){return{id:'boss-'+b.id+'-t'+k,name:b.name,side:'enemy',hp:b.hp,maxHp:b.hp,ac:b.ac,init,defeated:false,typeColor:'#C0392B',pairId:null,bossId:'boss-'+b.id,bossGap:Math.max(1,parseInt(b.gap)||1),bossTurn:k,bossTurns:total};}
+// Insert boss turn-tokens into the ENEMY slot sequence: one token after every `gap` enemy slots.
+// If the enemy roster runs out before all tokens are placed, leftovers append at the sequence's end
+// (the player/enemy interleave still spaces players between them).
+function weaveBossSlots(slots,tokens,gap){
+  const g=Math.max(1,parseInt(gap)||1);
+  const out=[];let k=0,cd=g;
+  slots.forEach(s=>{out.push(s);cd--;if(cd===0&&k<tokens.length){out.push({side:'enemy',units:[tokens[k++]]});cd=g;}});
+  while(k<tokens.length)out.push({side:'enemy',units:[tokens[k++]]});
+  return out;
+}
+// Mirror hp/status/defeat across every turn-token of the same boss
+function syncBoss(u){
+  if(!u||!u.bossId)return;
+  combatUnits.forEach(x=>{if(x!==u&&x.bossId===u.bossId){x.hp=u.hp;x.maxHp=u.maxHp;x.defeated=u.defeated;x.poisoned=u.poisoned;x.burning=u.burning;}});
+}
+function renderBossList(){const el=document.getElementById('boss-list');if(el)el.innerHTML=bossRowsHtml(bosses,'updateBoss','adjBoss','removeBoss');}
+// Shared row builder for the setup roster and the reinforcement roster
+function bossRowsHtml(list,upd,adj,rem){
+  return list.map(b=>{
+    const pat=('·'.repeat(Math.max(1,b.gap))+'♛').repeat(Math.max(1,b.turns));
+    return `<div class="player-block">
+      <div class="player-row">
+        <input class="inp inp-name" type="text" placeholder="Boss Name" value="${b.name}" onchange="${upd}('${b.id}','name',this.value)">
+        <input class="inp inp-num" type="number" placeholder="HP" value="${b.hp||''}" onchange="${upd}('${b.id}','hp',parseInt(this.value)||100)">
+        <input class="inp inp-num" type="number" placeholder="AC" value="${b.ac||''}" onchange="${upd}('${b.id}','ac',parseInt(this.value)||10)">
+        <button class="btn btn-red btn-sm" onclick="${rem}('${b.id}')">×</button>
+      </div>
+      <div class="enemy-controls" style="border-top:none;padding-top:6px;margin-top:2px">
+        <div class="enemy-ctrl-group"><div class="enemy-ctrl-label">Turns</div><div class="enemy-ctrl-row"><button class="count-btn" onclick="${adj}('${b.id}','turns',-1)">−</button><span class="count-val" style="color:var(--gold)">${b.turns}</span><button class="count-btn" onclick="${adj}('${b.id}','turns',1)">+</button></div></div>
+        <div class="enemy-ctrl-group"><div class="enemy-ctrl-label">Waits</div><div class="enemy-ctrl-row"><button class="count-btn" onclick="${adj}('${b.id}','gap',-1)">−</button><span class="count-val" style="color:var(--gold)">${b.gap}</span><button class="count-btn" onclick="${adj}('${b.id}','gap',1)">+</button></div></div>
+        <div class="enemy-ctrl-group"><div class="enemy-ctrl-label">Rhythm · Enemy Turns</div><div class="boss-pattern">${pat}</div><div class="squad-preview">every ${ord(b.gap+1)} enemy turn · players interleave</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+// ═══ BOSS REINFORCEMENTS ═══
+function addBossReinforce(){bossReinforcements.push({id:'b'+(++bossIdCounter),name:'',hp:100,ac:16,turns:2,gap:2});renderBossReinforceList();}
+function removeBossReinforce(id){bossReinforcements=bossReinforcements.filter(b=>b.id!==id);renderBossReinforceList();}
+function updateBossReinforce(id,f,v){const b=bossReinforcements.find(x=>x.id===id);if(b)b[f]=v;}
+function adjBossReinforce(id,f,d){const b=bossReinforcements.find(x=>x.id===id);if(!b)return;b[f]=Math.max(1,Math.min(12,(parseInt(b[f])||1)+d));renderBossReinforceList();}
+function renderBossReinforceList(){const el=document.getElementById('boss-reinforce-list');if(el)el.innerHTML=bossRowsHtml(bossReinforcements,'updateBossReinforce','adjBossReinforce','removeBossReinforce');}
 
 // ═══ CUSTOM REINFORCEMENTS ═══
 function addCustomReinforce(){customReinforcements.push({id:'cr'+(++customIdCounter),name:'',hp:20,ac:13,buddyId:null});renderCustomReinforceList();}
@@ -698,16 +767,25 @@ function startCombat(){
     }
   });
   // Template squads are solo slots; custom slots may be pairs
-  const eSlots=eUnits.map(u=>({init:u.init,units:[u]})).concat(ceSlots);
+  let eSlots=eUnits.map(u=>({init:u.init,units:[u]})).concat(ceSlots);
+  // Weave boss turn-tokens into the ENEMY sequence first — Waits counts ENEMY turns,
+  // so the player/enemy alternation below spaces players between boss activations on its own
+  bosses.filter(b=>b.name&&b.hp>0).forEach(b=>{
+    const total=Math.max(1,parseInt(b.turns)||1);
+    const toks=[];for(let k=1;k<=total;k++)toks.push(mkBossToken(b,enemyRoll,k,total));
+    eSlots=weaveBossSlots(eSlots,toks,b.gap);
+  });
   // Interleave at the SLOT level so buddy pairs never get split by an enemy
   const first=playerSideWins?pSlots:eSlots;
   const second=playerSideWins?eSlots:pSlots;
-  combatUnits=[];
+  const woven=[];
   const long=first.length>=second.length?first:second;
   const short=first.length<second.length?first:second;
-  const pushSlot=slot=>slot.units.forEach(u=>combatUnits.push(u));
+  const pushSlot=slot=>woven.push(slot);
   if(long===first){for(let i=0;i<long.length;i++){pushSlot(long[i]);if(i<short.length)pushSlot(short[i]);}}
   else{for(let i=0;i<long.length;i++){if(i<short.length)pushSlot(short[i]);pushSlot(long[i]);}}
+  combatUnits=[];
+  woven.forEach(s=>s.units.forEach(u=>combatUnits.push(u)));
   round=1;currentIndex=0;turnCounter=0;maxTurnReached=0;
   document.getElementById('gm-setup').style.display='none';
   document.getElementById('gm-tracker').style.display='block';
@@ -721,10 +799,13 @@ function getActiveIndex(){
   return -1;
 }
 function applyDoT(){
+  const doneBoss=new Set();
   combatUnits.forEach(u=>{
     if(u.defeated)return;
+    if(u.bossId){if(doneBoss.has(u.bossId))return;doneBoss.add(u.bossId);}
     if(u.burning){u.hp=Math.max(0,u.hp-2);}
     else if(u.poisoned){u.hp=Math.max(1,u.hp-1);}
+    if(u.bossId)syncBoss(u);
   });
 }
 // Returns the indices of all units sharing a slot with index i (buddied pair = 2 adjacent, solo = 1)
@@ -782,7 +863,7 @@ function clearDefeated(){
 // ═══ REINFORCEMENTS ═══
 function toggleReinforce(){
   const p=document.getElementById('reinforce-panel');
-  if(p.style.display==='none'){p.style.display='block';reinforceEnemies={};renderReinforceGrid();customReinforcements=[];renderCustomReinforceList();}
+  if(p.style.display==='none'){p.style.display='block';reinforceEnemies={};renderReinforceGrid();customReinforcements=[];renderCustomReinforceList();bossReinforcements=[];renderBossReinforceList();}
   else{p.style.display='none';}
 }
 function toggleReinforceEnemy(id){if(reinforceEnemies[id])delete reinforceEnemies[id];else reinforceEnemies[id]={count:1,squads:1};renderReinforceGrid();}
@@ -849,24 +930,43 @@ function deployReinforcements(){
       newSlots.push({side:'enemy',units:[mkCR(e,null)]});
     }
   });
-  if(!newSlots.length)return;
+  const validBR=bossReinforcements.filter(b=>b.name&&b.hp>0);
+  if(!newSlots.length&&!validBR.length)return;
   // Weave into alternating order at the SLOT level so buddy pairs are never split
   const curUnit=combatUnits[getActiveIndex()]||null;
   const defeated=combatUnits.filter(u=>u.defeated);
   const living=combatUnits.filter(u=>!u.defeated);
   const slots=buildLivingSlots(living);
-  const pSlots=slots.filter(s=>s.side==='player');
-  const eSlots=slots.filter(s=>s.side==='enemy').concat(newSlots);
+  const bossSlots=slots.filter(s=>s.units[0].bossId);
+  const pSlots=slots.filter(s=>!s.units[0].bossId&&s.side==='player');
+  let eSlots=slots.filter(s=>!s.units[0].bossId&&s.side==='enemy').concat(newSlots);
+  // Re-thread living boss tokens into the enemy sequence at their stored spacing
+  // so reinforcements never break the rhythm
+  const bossGroups={};
+  bossSlots.forEach(s=>{const u=s.units[0];(bossGroups[u.bossId]=bossGroups[u.bossId]||[]).push(u);});
+  Object.values(bossGroups).forEach(toks=>{
+    toks.sort((a,b)=>(a.bossTurn||0)-(b.bossTurn||0));
+    eSlots=weaveBossSlots(eSlots,toks,toks[0].bossGap);
+  });
+  // New bosses arriving as reinforcements weave in the same way
+  validBR.forEach(b=>{
+    const total=Math.max(1,parseInt(b.turns)||1);
+    const toks=[];for(let k=1;k<=total;k++)toks.push(mkBossToken(b,rInit,k,total));
+    eSlots=weaveBossSlots(eSlots,toks,b.gap);
+  });
   // Re-interleave: players first if they had initiative, else enemies
-  const winningSide=living.length?living[0].side:'player';
+  const firstNonBoss=living.find(u=>!u.bossId);
+  const winningSide=firstNonBoss?firstNonBoss.side:'player';
   const first=winningSide==='player'?pSlots:eSlots;
   const second=winningSide==='player'?eSlots:pSlots;
-  const newOrder=[];
-  const flat=slot=>slot.units.forEach(u=>newOrder.push(u));
+  const wovenSlots=[];
+  const flat=slot=>wovenSlots.push(slot);
   const long=first.length>=second.length?first:second;
   const short=first.length<second.length?first:second;
   if(long===first){for(let i=0;i<long.length;i++){flat(long[i]);if(i<short.length)flat(short[i]);}}
   else{for(let i=0;i<long.length;i++){if(i<short.length)flat(short[i]);flat(long[i]);}}
+  const newOrder=[];
+  wovenSlots.forEach(s=>s.units.forEach(u=>newOrder.push(u)));
   // Append defeated at end
   newOrder.push(...defeated);
   combatUnits=newOrder;
@@ -877,13 +977,14 @@ function deployReinforcements(){
   }else currentIndex=0;
   reinforceEnemies={};
   customReinforcements=[];renderCustomReinforceList();
+  bossReinforcements=[];renderBossReinforceList();
   document.getElementById('reinforce-panel').style.display='none';
   renderGMTracker();pushState();
 }
 
 // ═══ HP MODAL ═══
 function modalSubText(u){
-  return `HP: ${u.hp}/${u.maxHp} | AC: ${u.ac}${u.defeated?' | DEFEATED':''}${u.poisoned?' | POISONED':''}${u.burning?' | BURNING':''}${u.rxn===false?' | NO REACTION':''}`;
+  return `HP: ${u.hp}/${u.maxHp} | AC: ${u.ac}${u.bossId?' | ♛ SHARED HP ×'+u.bossTurns:''}${u.defeated?' | DEFEATED':''}${u.poisoned?' | POISONED':''}${u.burning?' | BURNING':''}${u.rxn===false?' | NO REACTION':''}`;
 }
 function reviveIfHealed(u){
   if(!(u.defeated&&u.hp>0))return;
@@ -904,13 +1005,13 @@ function reviveIfHealed(u){
 }
 function openModal(i){
   modalTarget=i;const u=combatUnits[i];
-  document.getElementById('modal-name').textContent=u.name;
+  document.getElementById('modal-name').textContent=(u.bossId?'♛ ':'')+u.name;
   document.getElementById('modal-sub').textContent=modalSubText(u);
   document.getElementById('modal-hp-input').value=u.hp;
   document.getElementById('hp-modal').classList.add('open');
 }
 function closeModal(e){if(!e||e.target===document.getElementById('hp-modal')){document.getElementById('hp-modal').classList.remove('open');modalTarget=null;}}
-function qAdj(d){if(modalTarget===null)return;const u=combatUnits[modalTarget];u.hp=Math.max(0,Math.min(u.maxHp,u.hp+d));reviveIfHealed(u);document.getElementById('modal-hp-input').value=u.hp;document.getElementById('modal-sub').textContent=modalSubText(u);}
+function qAdj(d){if(modalTarget===null)return;const u=combatUnits[modalTarget];u.hp=Math.max(0,Math.min(u.maxHp,u.hp+d));reviveIfHealed(u);syncBoss(u);document.getElementById('modal-hp-input').value=u.hp;document.getElementById('modal-sub').textContent=modalSubText(u);}
 function togglePoison(){
   if(modalTarget===null)return;const u=combatUnits[modalTarget];
   u.poisoned=!u.poisoned;
@@ -927,7 +1028,7 @@ function commitAndCloseModal(){
   if(modalTarget===null)return;const u=combatUnits[modalTarget];
   const v=parseInt(document.getElementById('modal-hp-input').value);
   if(!isNaN(v))u.hp=Math.max(0,Math.min(u.maxHp,v));
-  reviveIfHealed(u);
+  reviveIfHealed(u);syncBoss(u);
   document.getElementById('hp-modal').classList.remove('open');modalTarget=null;
   renderGMTracker();pushState();
 }
@@ -936,13 +1037,14 @@ function applyHp(){
   if(modalTarget===null)return;const u=combatUnits[modalTarget];
   const v=parseInt(document.getElementById('modal-hp-input').value);
   if(!isNaN(v))u.hp=Math.max(0,Math.min(u.maxHp,v));
-  reviveIfHealed(u);
+  reviveIfHealed(u);syncBoss(u);
   document.getElementById('hp-modal').classList.remove('open');modalTarget=null;
   renderGMTracker();pushState();
 }
 function defeatUnit(){
   if(modalTarget===null)return;const u=combatUnits[modalTarget];
   u.defeated=true;u.hp=0;u.poisoned=false;u.burning=false;
+  syncBoss(u);
   document.getElementById('hp-modal').classList.remove('open');
   if(modalTarget===getActiveIndex())nextTurn();
   else{renderGMTracker();pushState();}
@@ -968,11 +1070,12 @@ function renderSlot(u,i,gmMode){
   const ai=getActiveIndex();
   const isA=!u.defeated&&(i===ai||(u.pairId&&combatUnits[ai]&&combatUnits[ai].pairId===u.pairId));
   const isP=u.side==='player';
-  const cls=['slot',isP?'player-slot':'enemy-slot',isA?'active-turn':'',(u.poisoned||u.burning)?'compromised':'',u.defeated?'defeated':''].filter(Boolean).join(' ');
+  const cls=['slot',isP?'player-slot':'enemy-slot',u.bossId?'boss-slot':'',isA?'active-turn':'',(u.poisoned||u.burning)?'compromised':'',u.defeated?'defeated':''].filter(Boolean).join(' ');
   const ct=((1-pct)*100).toFixed(1);
   const socketImg=isP?ASSETS.playerSocket:ASSETS.swarmSocket;
   const orbImg=isP?ASSETS.playerOrb:ASSETS.swarmOrb;
   const mem=u.members&&u.members>1?`<span class="sq-ct">×${u.members}</span>`:'';
+  const bossTag=u.bossId?`<span class="boss-ct">♛ ${u.bossTurn}/${u.bossTurns}</span>`:'';
   const unitData=u.type?UNITS.find(x=>x.id===u.type):null;
   const inlineHtml=unitData&&gmMode?`<div class="inline-stats" id="istats-${i}">
     ${unitData.note?`<div class="stat-note">${unitData.note}</div>`:''}
@@ -986,7 +1089,7 @@ function renderSlot(u,i,gmMode){
     <div class="gem-zone"><div class="gem-asm"><div class="gem-sock" style="background-image:url('${ASSETS.gemSocket}')"></div><div class="gem-comp" style="background-image:url('${ASSETS.compGem}')"></div></div></div>
     <div class="stats-zone" ${gmMode?clickAction:''}>
       <div class="name-stat-row">
-        <div class="u-name" ${statsClick}>${u.name}${mem}</div>${isP?`<div class="rxn-wrap"><div class="rxn-base" style="background-image:url('${ASSETS.rxnEmpty}')"></div><div class="rxn-glow ${u.rxn?'available':''}" style="background-image:url('${ASSETS.rxnFull}')"></div></div>`:''}
+        <div class="u-name" ${statsClick}>${u.name}${mem}${bossTag}</div>${isP?`<div class="rxn-wrap"><div class="rxn-base" style="background-image:url('${ASSETS.rxnEmpty}')"></div><div class="rxn-glow ${u.rxn?'available':''}" style="background-image:url('${ASSETS.rxnFull}')"></div></div>`:''}
         <div class="stat-row">
           <div class="st st-ac"><span class="st-v">${u.ac}</span><span class="st-l">AC</span></div>
           <div class="st st-init"><span class="st-v">${u.init}</span><span class="st-l">Init</span></div>
@@ -1019,8 +1122,10 @@ function renderDotPanels(prefix){
     </div>`;
   };
   const lParts=[],rParts=[];
+  const seenBoss=new Set();
   combatUnits.forEach((u,i)=>{
     if(u.defeated||!(u.poisoned||u.burning))return;
+    if(u.bossId){if(seenBoss.has(u.bossId))return;seenBoss.add(u.bossId);}
     (u.side==='player'?lParts:rParts).push(buildHtml(u,i));
   });
   leftEl.innerHTML=lParts.join('');
