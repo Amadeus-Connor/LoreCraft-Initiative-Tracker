@@ -526,7 +526,13 @@ async function startMode(m){
 function pushState(){
   saveLocal();
   if(!isGM||!firebaseReady||!roomRef)return;
-  roomRef.set({units:combatUnits,currentIndex,round,ts:Date.now()});
+  // Firebase's set() throws on any `undefined` in the payload. A JSON round-trip strips
+  // such properties, so one stray field can never silently freeze the Player Stage.
+  try{
+    roomRef.set(JSON.parse(JSON.stringify({units:combatUnits,currentIndex,round,ts:Date.now()})));
+  }catch(e){
+    console.warn('Player Stage sync push failed:',e);
+  }
 }
 function listenForUpdates(){
   if(!firebaseReady||!roomRef){document.getElementById('ps-waiting').textContent='OFFLINE MODE — No sync';return;}
@@ -628,7 +634,7 @@ function removeBoss(id){bosses=bosses.filter(b=>b.id!==id);renderBossList();save
 function updateBoss(id,f,v){const b=bosses.find(x=>x.id===id);if(b)b[f]=v;saveLocal();}
 function adjBoss(id,f,d){const b=bosses.find(x=>x.id===id);if(!b)return;b[f]=Math.max(1,Math.min(12,(parseInt(b[f])||1)+d));renderBossList();saveLocal();}
 function ord(n){const s=['th','st','nd','rd'],v=n%100;return n+(s[(v-20)%10]||s[v]||s[0]);}
-function mkBossToken(b,init,k,total){return{id:'boss-'+b.id+'-t'+k,name:b.name,side:'enemy',hp:b.hp,maxHp:b.hp,ac:b.ac,init,defeated:false,typeColor:'#C0392B',pairId:null,bossId:'boss-'+b.id,bossGap:Math.max(1,parseInt(b.gap)||1),bossTurn:k,bossTurns:total};}
+function mkBossToken(b,init,k,total){return{id:'boss-'+b.id+'-t'+k,name:b.name,side:'enemy',hp:b.hp,maxHp:b.hp,ac:b.ac,init,defeated:false,poisoned:false,burning:false,typeColor:'#C0392B',pairId:null,bossId:'boss-'+b.id,bossGap:Math.max(1,parseInt(b.gap)||1),bossTurn:k,bossTurns:total};}
 // Insert boss turn-tokens into the ENEMY slot sequence: one token after every `gap` enemy slots.
 // If the enemy roster runs out before all tokens are placed, leftovers append at the sequence's end
 // (the player/enemy interleave still spaces players between them).
@@ -642,7 +648,9 @@ function weaveBossSlots(slots,tokens,gap){
 // Mirror hp/status/defeat across every turn-token of the same boss
 function syncBoss(u){
   if(!u||!u.bossId)return;
-  combatUnits.forEach(x=>{if(x!==u&&x.bossId===u.bossId){x.hp=u.hp;x.maxHp=u.maxHp;x.defeated=u.defeated;x.poisoned=u.poisoned;x.burning=u.burning;}});
+  // Coerce flags to real booleans — copying an absent property would write `undefined`,
+  // which Firebase's set() rejects, silently killing Player Stage sync
+  combatUnits.forEach(x=>{if(x!==u&&x.bossId===u.bossId){x.hp=u.hp;x.maxHp=u.maxHp;x.defeated=!!u.defeated;x.poisoned=!!u.poisoned;x.burning=!!u.burning;}});
 }
 function renderBossList(){const el=document.getElementById('boss-list');if(el)el.innerHTML=bossRowsHtml(bosses,'updateBoss','adjBoss','removeBoss');}
 // Shared row builder for the setup roster and the reinforcement roster
@@ -805,7 +813,7 @@ function applyDoT(){
     if(u.bossId){if(doneBoss.has(u.bossId))return;doneBoss.add(u.bossId);}
     if(u.burning){u.hp=Math.max(0,u.hp-2);}
     else if(u.poisoned){u.hp=Math.max(1,u.hp-1);}
-    if(u.bossId)syncBoss(u);
+    if(u.bossId&&(u.burning||u.poisoned))syncBoss(u);
   });
 }
 // Returns the indices of all units sharing a slot with index i (buddied pair = 2 adjacent, solo = 1)
